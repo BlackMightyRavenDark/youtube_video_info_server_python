@@ -5,9 +5,13 @@ import urllib.request
 
 
 def download_string(url):
-    response = urllib.request.urlopen(url)
-    data = response.read()
-    return data.decode()
+    try:
+        response = urllib.request.urlopen(url)
+        data = response.read()
+        return data.decode()
+    except Exception as ex:
+        print(ex)
+        return None
 
 
 def extract_n_function_name(player_code):

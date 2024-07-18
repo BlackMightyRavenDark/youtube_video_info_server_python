@@ -34,6 +34,12 @@ def process_client(client):
     player_url = queue_dict["player_url"][0]
     print("Downloading player...")
     player_code = download_string(player_url.replace(" ", "%20"))
+    if not player_code:
+        t = "Unable to download player!"
+        print(t)
+        answer = "HTTP/1.1 500 Internal server error\r\n\r\n{0}".format(t)
+        client.send(answer.encode())
+        return
     func_name = extract_n_function_name(player_code)
     print("Function name: {0}".format(func_name))
     print("Decrypting given 'n'-parameter {0}...".format(n_param))
