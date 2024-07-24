@@ -42,7 +42,9 @@ def get_video_info(video_id):
     body = generate_video_info_request_body(video_id, True)
     headers = {"Content-Type": "application/json"}
     video_info = http_post(url, headers, json.dumps(body).encode())
+    microformat = None
     if video_info:
+        microformat = video_info["microformat"]
         if is_family_safe(video_info):
             streaming_data_decoded = get_streaming_data_decoded(video_id)
             if streaming_data_decoded:
@@ -80,6 +82,8 @@ def get_video_info(video_id):
             request_obj = urllib.request.Request(url, method="POST", headers=headers)
             request = urllib.request.urlopen(request_obj, data=data)
             response = json.loads(request.read().decode())
+            if microformat:
+                response["microformat"] = microformat
             fix_download_urls(response, player_code)
             return response
     return None
