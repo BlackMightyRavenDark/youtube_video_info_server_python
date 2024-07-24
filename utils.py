@@ -18,6 +18,18 @@ def download_string(url):
         return None
 
 
+def http_post(url, headers, body):
+    try:
+        headers["Content-Length"] = len(body)
+        request_obj = urllib.request.Request(url, method="POST", headers=headers)
+        request = urllib.request.urlopen(request_obj, data=body)
+        response = json.loads(request.read().decode())
+        return response
+    except Exception as ex:
+        print(ex)
+        return None
+
+
 def download_video_web_page(video_id, bpctr):
     url = "{0}/watch?v={1}".format(YOUTUBE_URL, video_id)
     if bpctr:
@@ -26,6 +38,16 @@ def download_video_web_page(video_id, bpctr):
 
 
 def get_video_info(video_id):
+    url = "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+    body = generate_video_info_request_body(video_id, True)
+    headers = {"Content-Type": "application/json"}
+    video_info = http_post(url, headers, json.dumps(body).encode())
+    if video_info:
+        if is_family_safe(video_info):
+            streaming_data_decoded = get_streaming_data_decoded(video_id)
+            if streaming_data_decoded:
+                video_info["streamingData"] = streaming_data_decoded
+                return video_info
     web_page = download_video_web_page(video_id, False)
     video_info = extract_initial_player_response(web_page)
     if video_info and not is_family_safe(video_info):
@@ -99,6 +121,44 @@ def extract_initial_player_response(web_page_code):
 
 def is_family_safe(video_info):
     return video_info["microformat"]["playerMicroformatRenderer"]["isFamilySafe"]
+
+
+def get_streaming_data_decoded(video_id):
+    url = "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+    body = generate_video_info_request_body(video_id, False)
+    headers = {"Content-Type": "application/json"}
+    data = http_post(url, headers, json.dumps(body).encode())
+    return data
+
+
+def generate_video_info_request_body(video_id, get_with_encrypted_urls):
+    if get_with_encrypted_urls:
+        body = {
+            "context": {
+                "client": {
+                    "hl": "en",
+                    "gl": "US",
+                    "clientName": "WEB",
+                    "clientVersion": "2.20201021.03.00"
+                }
+            },
+            "videoId": video_id}
+        return body
+    else:
+        body = {
+            "videoId": video_id,
+            "context": {
+                "client": {
+                    "clientName": "ANDROID_TESTSUITE",
+                    "clientVersion": "1.9",
+                    "androidSdkVersion": 30,
+                    "hl": "en",
+                    "gl": "US",
+                    "utcOffsetMinutes": 0
+                }
+            }
+        }
+        return body
 
 
 def extract_player_url_from_web_page(web_page_code):
