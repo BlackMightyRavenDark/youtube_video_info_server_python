@@ -95,6 +95,8 @@ def fix_download_urls(video_info, player_code):
     adaptive_formats = streaming_data["adaptiveFormats"]
     if adaptive_formats:
         func_name = extract_n_function_name(player_code)
+        if not func_name:
+            return
         jsi = JSInterpreter(player_code)
         func_code = jsi.extract_function_code(func_name)
         decryption_func = extract_n_function_from_code(jsi, func_code)
@@ -190,6 +192,9 @@ def extract_n_function_name(player_code):
             (?P<nfunc>[a-zA-Z_$][\w$]*)(?:\s*\[(?P<idx>\d+)\])?\s*\(\s*[\w$]+\s*\)
         '''
     match = re.search(pattern, player_code)
+    if not match:
+        print("Can't extract function name!")
+        return None
     func_name = match.group(3)
     idx = match.group(4)
     if not idx:

@@ -67,6 +67,13 @@ def process_client(client):
                 client.send(answer.encode())
                 return
             func_name = extract_n_function_name(player_code)
+            if not func_name:
+                t = "Unable to extract the 'n'-parameter decryption function name!"
+                print(t)
+                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
+                client.send(answer.encode())
+                return
+
             print(f"Function name: {func_name}")
             print(f"Decrypting given 'n'-parameter {n_param}...")
             jsi = JSInterpreter(player_code)
