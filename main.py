@@ -35,9 +35,8 @@ def process_client(client):
                 return
 
             body = json.dumps(video_info)
-            body_bytes = body.encode()
-            headers = "Content-Type: application/json\r\nContent-Length: {0}".format(len(body_bytes))
-            answer = "HTTP/1.1 200 OK\r\n{0}\r\n\r\n{1}".format(headers, body)
+            headers = f"Content-Type: application/json\r\nContent-Length: {len(body.encode())}"
+            answer = f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n{body}"
             client.send(answer.encode())
         case "/api/nparam":
             if len(request_path_splitted) <= 1:
@@ -64,25 +63,25 @@ def process_client(client):
             if not player_code:
                 t = "Unable to download player!"
                 print(t)
-                answer = "HTTP/1.1 500 Internal server error\r\n\r\n{0}".format(t)
+                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
                 client.send(answer.encode())
                 return
             func_name = extract_n_function_name(player_code)
-            print("Function name: {0}".format(func_name))
-            print("Decrypting given 'n'-parameter {0}...".format(n_param))
+            print(f"Function name: {func_name}")
+            print(f"Decrypting given 'n'-parameter {n_param}...")
             jsi = JSInterpreter(player_code)
             func_code = jsi.extract_function_code(func_name)
             decryption_func = extract_n_function_from_code(jsi, func_code)
             n_param_decrypted = decryption_func(n_param)
-            print("Decrypted 'n'-parameter: {0}".format(n_param_decrypted))
+            print(f"Decrypted 'n'-parameter: {n_param_decrypted}")
 
             json_answer = json.dumps({"n": n_param_decrypted, "functionName": func_name}).encode()
-            headers = "Content-Type: application/json\r\nContent-Length: {0}".format(str(len(json_answer)))
-            client.send("HTTP/1.1 200 OK\r\n{0}\r\n\r\n".format(headers).encode())
+            headers = f"Content-Type: application/json\r\nContent-Length: {str(len(json_answer))}"
+            client.send(f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n".encode())
             client.send(json_answer)
         case _:
             msg = "Valid endpoint list:\r\nGET /api/videoinfo\r\nGET /api/nparam"
-            answer = "HTTP/1.1 400 Client error\r\n\r\n{0}".format(msg)
+            answer = f"HTTP/1.1 400 Client error\r\n\r\n{msg}"
             client.send(answer.encode())
 
 
@@ -99,15 +98,15 @@ if __name__ == '__main__':
         server = socket.socket()
         server.bind(('', port))
         server.listen()
-        print("The server is started on port {0}".format(port))
+        print(f"The server is started on port {port}")
         print("You can use it this way:")
         print("GET /api/videoinfo?video_id=<youtube_video_id>")
         print("GET /api/nparam?n=<encrypted_n_parameter_value>&player_url=<youtube_video_player_url>")
         while True:
             client, client_addr = server.accept()
-            print("Client {0} is connected".format(client_addr))
+            print(f"Client {client_addr} is connected")
             process_client(client)
             client.close()
-            print("Client {0} is disconnected".format(client_addr))
+            print(f"Client {client_addr} is disconnected")
     except Exception as ex:
         print(ex)

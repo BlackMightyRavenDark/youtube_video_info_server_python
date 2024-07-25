@@ -1,11 +1,13 @@
-import json
 from urllib.parse import parse_qs
 from ytdl.jsinterp import JSInterpreter
+import json
 import re
 import traceback
 import urllib.request
 
 YOUTUBE_URL = "https://youtube.com"
+YOUTUBE_API_PLAYER_URL = "https://www.youtube.com/youtubei/v1/player"
+YOUTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 
 
 def download_string(url):
@@ -31,14 +33,14 @@ def http_post(url, headers, body):
 
 
 def download_video_web_page(video_id, bpctr):
-    url = "{0}/watch?v={1}".format(YOUTUBE_URL, video_id)
+    url = f"{YOUTUBE_URL}/watch?v={video_id}"
     if bpctr:
         url += "&bpctr=9999999999&has_verified=1"
     return download_string(url)
 
 
 def get_video_info(video_id):
-    url = "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+    url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
     body = generate_video_info_request_body(video_id, True)
     headers = {"Content-Type": "application/json"}
     video_info = http_post(url, headers, json.dumps(body).encode())
@@ -59,27 +61,26 @@ def get_video_info(video_id):
         if player_code:
             sts = extract_signature_timestamp_from_player_code(player_code)
             body = {
-                'playbackContext': {
-                    'contentPlaybackContext': {'html5Preference': 'HTML5_PREF_WANTS', 'signatureTimestamp': sts}},
-                'contentCheckOk': True,
-                'racyCheckOk': True,
-                'context': {
-                    'client': {'clientName': 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', 'clientVersion': '2.0', 'hl': 'en',
-                               'clientScreen': 'EMBED'},
-                    'thirdParty': {'embedUrl': 'https://google.com'},
+                "playbackContext": {
+                    "contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": sts}},
+                "contentCheckOk": True,
+                "racyCheckOk": True,
+                "context": {
+                    "client": {"clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "clientVersion": "2.0", "hl": "en",
+                               "clientScreen": "EMBED"},
+                    "thirdParty": {"embedUrl": "https://google.com"}
                 },
-                'videoId': video_id,
+                "videoId": video_id
             }
             headers = {
-                'Content-Type': 'application/json',
-                'X-YouTube-Client-Name': '85',
-                'X-YouTube-Client-Version': '2.0',
-                'Origin': 'https://www.youtube.com'
+                "Content-Type": "application/json",
+                "X-YouTube-Client-Name": "85",
+                "X-YouTube-Client-Version": "2.0",
+                "Origin": "https://www.youtube.com"
             }
 
-            url = "https://www.youtube.com/youtubei/v1/player"
             data = json.dumps(body).encode()
-            request_obj = urllib.request.Request(url, method="POST", headers=headers)
+            request_obj = urllib.request.Request(YOUTUBE_API_PLAYER_URL, method="POST", headers=headers)
             request = urllib.request.urlopen(request_obj, data=data)
             response = json.loads(request.read().decode())
             if microformat:
@@ -110,9 +111,10 @@ def fix_download_urls(video_info, player_code):
                     n_param_decrypted = decryption_func(n_param)
                     dict_n_params[n_param] = n_param_decrypted
                 queue_string["n"][0] = n_param_decrypted
-                item["url"] = f"{url_splitted[0]}?{"&".join(
+                fixed_url = f"{url_splitted[0]}?{"&".join(
                     f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
                     for key, value in queue_string.items())}"
+                item["url"] = fixed_url
 
 
 def extract_initial_player_response(web_page_code):
@@ -128,7 +130,7 @@ def is_family_safe(video_info):
 
 
 def get_streaming_data_decoded(video_id):
-    url = "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+    url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
     body = generate_video_info_request_body(video_id, False)
     headers = {"Content-Type": "application/json"}
     data = http_post(url, headers, json.dumps(body).encode())
@@ -193,7 +195,7 @@ def extract_n_function_name(player_code):
     if not idx:
         return func_name
 
-    pattern = r'var {0}\s*=\s*(\[.+?\])\s*[,;]'.format(re.escape(func_name))
+    pattern = r"var {0}\s*=\s*(\[.+?\])\s*[,;]".format(func_name)
     match = re.search(pattern, player_code)
     func_name = match.group(1)[1:][:-1]
     return func_name
