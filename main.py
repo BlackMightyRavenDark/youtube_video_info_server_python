@@ -2,7 +2,7 @@ import socket
 from utils import *
 
 
-def process_client(client):
+def process_client(client, client_addr):
     received_string = client.recv(4096).decode()
     request_string_splitted = received_string.split("\r\n")[0].split(" ")
     request_method = request_string_splitted[0]
@@ -28,6 +28,8 @@ def process_client(client):
                 return
 
             video_id = queue_dict["video_id"][0]
+            print(f"Client {client_addr} is requested video {video_id}")
+
             video_info = get_video_info(video_id)
             if not video_info:
                 answer = "HTTP/1.1 404 Not found\r\n\r\nCan't find video info!"
@@ -112,7 +114,7 @@ if __name__ == '__main__':
         while True:
             client, client_addr = server.accept()
             print(f"Client {client_addr} is connected")
-            process_client(client)
+            process_client(client, client_addr)
             client.close()
             print(f"Client {client_addr} is disconnected")
     except Exception as ex:
