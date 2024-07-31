@@ -54,39 +54,46 @@ def get_video_info(video_id):
                 return video_info
     web_page = download_video_web_page(video_id, False)
     video_info = extract_initial_player_response(web_page)
-    if video_info and not is_family_safe(video_info):
-        web_page = download_video_web_page(video_id, True)
-        player_url = extract_player_url_from_web_page(web_page)
-        player_code = download_string(player_url)
-        if player_code:
-            sts = extract_signature_timestamp_from_player_code(player_code)
-            body = {
-                "playbackContext": {
-                    "contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": sts}},
-                "contentCheckOk": True,
-                "racyCheckOk": True,
-                "context": {
-                    "client": {"clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "clientVersion": "2.0", "hl": "en",
-                               "clientScreen": "EMBED"},
-                    "thirdParty": {"embedUrl": "https://google.com"}
-                },
-                "videoId": video_id
-            }
-            headers = {
-                "Content-Type": "application/json",
-                "X-YouTube-Client-Name": "85",
-                "X-YouTube-Client-Version": "2.0",
-                "Origin": "https://www.youtube.com"
-            }
+    if video_info:
+        if not is_family_safe(video_info):
+            web_page = download_video_web_page(video_id, True)
+            player_url = extract_player_url_from_web_page(web_page)
+            player_code = download_string(player_url)
+            if player_code:
+                sts = extract_signature_timestamp_from_player_code(player_code)
+                body = {
+                    "playbackContext": {
+                        "contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": sts}},
+                    "contentCheckOk": True,
+                    "racyCheckOk": True,
+                    "context": {
+                        "client": {"clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "clientVersion": "2.0", "hl": "en",
+                                   "clientScreen": "EMBED"},
+                        "thirdParty": {"embedUrl": "https://google.com"}
+                    },
+                    "videoId": video_id
+                }
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-YouTube-Client-Name": "85",
+                    "X-YouTube-Client-Version": "2.0",
+                    "Origin": "https://www.youtube.com"
+                }
 
-            data = json.dumps(body).encode()
-            request_obj = urllib.request.Request(YOUTUBE_API_PLAYER_URL, method="POST", headers=headers)
-            request = urllib.request.urlopen(request_obj, data=data)
-            response = json.loads(request.read().decode())
+                data = json.dumps(body).encode()
+                request_obj = urllib.request.Request(YOUTUBE_API_PLAYER_URL, method="POST", headers=headers)
+                request = urllib.request.urlopen(request_obj, data=data)
+                response = request.read()
+                if response:
+                    video_info = json.loads(response.decode())
+        else:
+            player_url = extract_player_url_from_web_page(web_page)
+            player_code = download_string(player_url)
+        if video_info:
             if microformat:
-                response["microformat"] = microformat
-            fix_download_urls(response, player_code)
-            return response
+                video_info["microformat"] = microformat
+            fix_download_urls(video_info, player_code)
+            return video_info
     return None
 
 
@@ -102,7 +109,36 @@ def fix_download_urls(video_info, player_code):
         decryption_func = extract_n_function_from_code(jsi, func_code)
 
         dict_n_params = dict()
+        dict_cipher = dict()
         for item in adaptive_formats:
+            cipher_string = item["signatureCipher"]
+            if cipher_string:
+                cipher_signature_dict = parse_qs(cipher_string)
+                encrypted_cipher = cipher_signature_dict["s"][0]
+                encrypted_cipher_quoted = urllib.parse.quote_plus(encrypted_cipher)
+                if encrypted_cipher_quoted in dict_cipher:
+                    decrypted_cipher = dict_cipher[encrypted_cipher_quoted]
+                else:
+                    decrypted_cipher = decrypt_cipher(encrypted_cipher, player_code)
+                    dict_cipher[encrypted_cipher_quoted] = decrypted_cipher
+                url_dict = parse_qs(cipher_signature_dict["url"][0])
+                url_dict["sig"] = [decrypted_cipher]
+                if "n" in url_dict:
+                    encrypted_n = url_dict["n"][0]
+                    if encrypted_n in dict_n_params:
+                        decrypted_n = dict_n_params[encrypted_n]
+                    else:
+                        decrypted_n = decryption_func(encrypted_n)
+                        dict_n_params[encrypted_n] = decrypted_n
+                    url_dict["n"] = [decrypted_n]
+                first_element = list(url_dict.items())[0]
+                first_part = f"{first_element[0]}={first_element[1][0]}"
+                del url_dict[first_element[0]]
+                item["url"] = f"{first_part}?{"&".join(
+                    f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
+                    for key, value in url_dict.items())}"
+                continue
+
             url_splitted = item["url"].split("?")
             queue_string = parse_qs(url_splitted[1])
             if "n" in queue_string:
@@ -117,6 +153,13 @@ def fix_download_urls(video_info, player_code):
                     f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
                     for key, value in queue_string.items())}"
                 item["url"] = fixed_url
+
+
+def is_ciphered(streaming_data):
+    a = streaming_data["adaptiveFormats"]
+    if a:
+        return a[0]["signatureCipher"] is not None
+    return False
 
 
 def extract_initial_player_response(web_page_code):
@@ -225,3 +268,38 @@ def extract_n_function_from_code(jsi, func_code):
         return ret
 
     return decrypt_n_param
+
+
+def decrypt_cipher(encrypted_signature, player_code):
+    patterns = (r'\b[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*encodeURIComponent\s*\(\s*(?P<sig>[a-zA-Z0-9$]+)\(',
+                r'\b[a-zA-Z0-9]+\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*encodeURIComponent\s*\(\s*(?P<sig>[a-zA-Z0-9$]+)\(',
+                r'\bm=(?P<sig>[a-zA-Z0-9$]{2,})\(decodeURIComponent\(h\.s\)\)',
+                r'\bc&&\(c=(?P<sig>[a-zA-Z0-9$]{2,})\(decodeURIComponent\(c\)\)',
+                r'(?:\b|[^a-zA-Z0-9$])(?P<sig>[a-zA-Z0-9$]{2,})\s*=\s*function\(\s*a\s*\)\s*{\s*a\s*=\s*a\.split\(\s*""\s*\)(?:;[a-zA-Z0-9$]{2}\.[a-zA-Z0-9$]{2}\(a,\d+\))?',
+                r'(?P<sig>[a-zA-Z0-9$]+)\s*=\s*function\(\s*a\s*\)\s*{\s*a\s*=\s*a\.split\(\s*""\s*\)',
+                # Obsolete patterns
+                r'("|\')signature\1\s*,\s*(?P<sig>[a-zA-Z0-9$]+)\(',
+                r'\.sig\|\|(?P<sig>[a-zA-Z0-9$]+)\(',
+                r'yt\.akamaized\.net/\)\s*\|\|\s*.*?\s*[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*(?:encodeURIComponent\s*\()?\s*(?P<sig>[a-zA-Z0-9$]+)\(',
+                r'\b[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*(?P<sig>[a-zA-Z0-9$]+)\(',
+                r'\b[a-zA-Z0-9]+\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*(?P<sig>[a-zA-Z0-9$]+)\(',
+                r'\bc\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*\([^)]*\)\s*\(\s*(?P<sig>[a-zA-Z0-9$]+)\(')
+    func_name = search_patterns(patterns, player_code)
+    if func_name:
+        print(f"Decrypting Cipher signature '{encrypted_signature}'...")
+        jsi = JSInterpreter(player_code)
+        func = jsi.extract_function(func_name)
+        compat_chr = chr
+        t = ''.join(map(compat_chr, range(len(encrypted_signature))))
+        numbers = [ord(c) for c in func([t])]
+        decrypted_signature = ''.join([encrypted_signature[number] for number in numbers])
+        return decrypted_signature
+    return None
+
+
+def search_patterns(patterns, text):
+    for t in patterns:
+        match = re.search(t, text)
+        if match:
+            return match.group(1)
+    return None
