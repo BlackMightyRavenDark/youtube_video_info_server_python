@@ -43,7 +43,8 @@ def get_video_info(video_id):
     url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
     body = generate_video_info_request_body(video_id, True)
     headers = {"Content-Type": "application/json"}
-    video_info = http_post(url, headers, json.dumps(body).encode())
+    # video_info = http_post(url, headers, json.dumps(body).encode())
+    video_info = None
     microformat = None
     if video_info:
         microformat = video_info["microformat"]
@@ -239,7 +240,7 @@ def extract_n_function_name(player_code):
         '''
     match = re.search(pattern, player_code)
     if not match:
-        print("Can't extract function name!")
+        print("[n-param decryptor] Can't extract function name!")
         return None
     func_name = match.group(3)
     idx = match.group(4)
@@ -248,6 +249,10 @@ def extract_n_function_name(player_code):
 
     pattern = r"var {0}\s*=\s*(\[.+?\])\s*[,;]".format(func_name)
     match = re.search(pattern, player_code)
+    if not match:
+        print("[n-param decryptor] Can't find function name!")
+        return None
+
     func_name = match.group(1)[1:][:-1]
     return func_name
 
