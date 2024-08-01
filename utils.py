@@ -43,8 +43,7 @@ def get_video_info(video_id):
     url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
     body = generate_video_info_request_body(video_id, True)
     headers = {"Content-Type": "application/json"}
-    # video_info = http_post(url, headers, json.dumps(body).encode())
-    video_info = None
+    video_info = http_post(url, headers, json.dumps(body).encode())
     microformat = None
     if video_info:
         microformat = video_info["microformat"]
