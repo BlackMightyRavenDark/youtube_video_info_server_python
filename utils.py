@@ -135,7 +135,7 @@ def fix_download_urls(video_info, player_code):
                 first_element = list(url_dict.items())[0]
                 first_part = f"{first_element[0]}={first_element[1][0]}"
                 del url_dict[first_element[0]]
-                item["url"] = f"{first_part}?{"&".join(
+                item["url"] = f"{first_part}&{"&".join(
                     f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
                     for key, value in url_dict.items())}"
                 continue
