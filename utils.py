@@ -231,12 +231,15 @@ def extract_signature_timestamp_from_player_code(player_code):
 
 def extract_n_function_name(player_code):
     pattern = r'''(?x)
-                (?:\(\s*(?P<b>[a-z])\s*=\s*(?:
-                    String\s*\.\s*fromCharCode\s*\(\s*110\s*\)|
-                    "n+"\[\s*\+?s*[\w$.]+\s*]
-                )\s*,(?P<c>[a-z])\s*=\s*[a-z]\s*)?
-                \.\s*get\s*\(\s*(?(b)(?P=b)|"n{1,2}")(?:\s*\)){2}\s*&&\s*\(\s*(?(c)(?P=c)|b)\s*=\s*
-                (?P<nfunc>[a-zA-Z_$][\w$]*)(?:\s*\[(?P<idx>\d+)\])?\s*\(\s*[\w$]+\s*\)
+            (?:
+                \.get\("n"\)\)&&\(b=|
+                (?:
+                    b=String\.fromCharCode\(110\)|
+                    (?P<str_idx>[a-zA-Z0-9_$.]+)&&\(b="nn"\[\+(?P=str_idx)\]
+                ),c=a\.get\(b\)\)&&\(c=|
+                \b(?P<var>[a-zA-Z0-9_$]+)=
+            )(?P<nfunc>[a-zA-Z0-9_$]+)(?:\[(?P<idx>\d+)\])?\([a-zA-Z]\)
+            (?(var),[a-zA-Z0-9_$]+\.set\("n"\,(?P=var)\),(?P=nfunc)\.length)
         '''
     match = re.search(pattern, player_code)
     if not match:
