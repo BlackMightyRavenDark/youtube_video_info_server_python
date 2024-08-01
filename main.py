@@ -30,7 +30,18 @@ def process_client(client, client_addr):
             video_id = queue_dict["video_id"][0]
             print(f"Client {client_addr} is requested video {video_id}")
 
-            video_info = get_video_info(video_id)
+            use_api_first = True
+            if "use_api_first" in queue_dict:
+                value = queue_dict["use_api_first"][0]
+                if value != "true" and value != "false":
+                    answer = "HTTP/1.1 400 Client error\r\n\r\n"\
+                             "The 'use_api_first' parameter value must be 'true' or 'false' lowercased!"
+                    client.send(answer.encode())
+                    return
+                if value == "false":
+                    use_api_first = False
+
+            video_info = get_video_info(video_id, use_api_first)
             if not video_info:
                 answer = "HTTP/1.1 404 Not found\r\n\r\nCan't find video info!"
                 client.send(answer.encode())
@@ -149,7 +160,7 @@ if __name__ == '__main__':
         server.listen()
         print(f"The server is started on port {port}")
         print("You can use it this way:")
-        print("GET /api/videoinfo?video_id=<youtube_video_id>")
+        print("GET /api/videoinfo?video_id=<youtube_video_id>&use_api_first=false")
         print("GET /api/nparam?n=<encrypted_n_parameter_value>&player_url=<youtube_video_player_url>")
         print("GET /api/cipher?cipher=<encrypted_cipher_signature_value>&player_url=<youtube_video_player_url>")
         while True:

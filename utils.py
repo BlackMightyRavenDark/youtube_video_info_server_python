@@ -39,19 +39,20 @@ def download_video_web_page(video_id, bpctr):
     return download_string(url)
 
 
-def get_video_info(video_id):
-    url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
-    body = generate_video_info_request_body(video_id, True)
-    headers = {"Content-Type": "application/json"}
-    video_info = http_post(url, headers, json.dumps(body).encode())
+def get_video_info(video_id, use_api_first):
     microformat = None
-    if video_info:
-        microformat = video_info["microformat"]
-        if is_family_safe(video_info):
-            streaming_data_decoded = get_streaming_data_decoded(video_id)
-            if streaming_data_decoded:
-                video_info["streamingData"] = streaming_data_decoded
-                return video_info
+    if use_api_first:
+        url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
+        body = generate_video_info_request_body(video_id, True)
+        headers = {"Content-Type": "application/json"}
+        video_info = http_post(url, headers, json.dumps(body).encode())
+        if video_info:
+            microformat = video_info["microformat"]
+            if is_family_safe(video_info):
+                streaming_data_decoded = get_streaming_data_decoded(video_id)
+                if streaming_data_decoded:
+                    video_info["streamingData"] = streaming_data_decoded
+                    return video_info
     web_page = download_video_web_page(video_id, False)
     video_info = extract_initial_player_response(web_page)
     if video_info:
