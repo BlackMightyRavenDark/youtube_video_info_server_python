@@ -88,8 +88,48 @@ def process_client(client, client_addr):
             headers = f"Content-Type: application/json\r\nContent-Length: {str(len(json_answer))}"
             client.send(f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n".encode())
             client.send(json_answer)
+        case "/api/cipher":
+            if len(request_path_splitted) <= 1:
+                answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
+                         "Required parameters are: 'cipher', 'player_url'"
+                client.send(answer.encode())
+                return
+
+            queue_dict = parse_qs(request_path_splitted[1])
+            if not ("cipher" in queue_dict):
+                answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'cipher' parameter is required!"
+                client.send(answer.encode())
+                return
+
+            if not ("player_url" in queue_dict):
+                answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'player_url' parameter is required!"
+                client.send(answer.encode())
+                return
+
+            player_url = queue_dict["player_url"][0].replace(" ", "%20")
+            player_code = download_string(player_url)
+            if not player_code:
+                t = f"Unable to download player code!\r\n{player_url}"
+                print(t)
+                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
+                client.send(answer.encode())
+                return
+
+            encrypted_cipher = queue_dict["cipher"][0]
+            decrypted_cipher = decrypt_cipher(encrypted_cipher, player_code)
+            if not decrypted_cipher:
+                t = "Unable to decrypt Cipher!"
+                print(t)
+                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
+                client.send(answer.encode())
+                return
+
+            json_answer = json.dumps({"encryptedCipher": encrypted_cipher, "decryptedCipher": decrypted_cipher}).encode()
+            headers = f"Content-Type: application/json\r\nContent-Length: {str(len(json_answer))}"
+            client.send(f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n".encode())
+            client.send(json_answer)
         case _:
-            msg = "Valid endpoint list:\r\nGET /api/videoinfo\r\nGET /api/nparam"
+            msg = "Valid endpoint list:\r\nGET /api/videoinfo\r\nGET /api/nparam\r\nGET /api/cipher"
             answer = f"HTTP/1.1 400 Client error\r\n\r\n{msg}"
             client.send(answer.encode())
 
@@ -111,6 +151,7 @@ if __name__ == '__main__':
         print("You can use it this way:")
         print("GET /api/videoinfo?video_id=<youtube_video_id>")
         print("GET /api/nparam?n=<encrypted_n_parameter_value>&player_url=<youtube_video_player_url>")
+        print("GET /api/cipher?cipher=<encrypted_cipher_signature_value>&player_url=<youtube_video_player_url>")
         while True:
             client, client_addr = server.accept()
             print(f"Client {client_addr} is connected")
