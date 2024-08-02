@@ -11,138 +11,148 @@ def process_client(client, client_addr):
         client.send(answer.encode())
         return
 
-    request_path_splitted = request_string_splitted[1].split("?")
-    endpoint = request_path_splitted[0]
-    match endpoint:
+    request_path = request_string_splitted[1]
+    request_path_splitted = request_path.split("?")
+    endpoint_path = request_path_splitted[0]
+    match endpoint_path:
         case "/api/videoinfo":
-            if len(request_path_splitted) <= 1:
-                answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n"\
-                    "You must to send the 'video_id' parameter!"
-                client.send(answer.encode())
-                return
-
-            queue_dict = parse_qs(request_path_splitted[1])
-            if not ("video_id" in queue_dict):
-                answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'video_id' parameter is required!"
-                client.send(answer.encode())
-                return
-
-            video_id = queue_dict["video_id"][0]
-            print(f"Client {client_addr} is requested video {video_id}")
-
-            use_api_first = True
-            if "use_api_first" in queue_dict:
-                value = queue_dict["use_api_first"][0]
-                if value != "true" and value != "false":
-                    answer = "HTTP/1.1 400 Client error\r\n\r\n"\
-                             "The 'use_api_first' parameter value must be 'true' or 'false' lowercased!"
-                    client.send(answer.encode())
-                    return
-                if value == "false":
-                    use_api_first = False
-
-            video_info = get_video_info(video_id, use_api_first)
-            if not video_info:
-                answer = "HTTP/1.1 404 Not found\r\n\r\nCan't find video info!"
-                client.send(answer.encode())
-                return
-
-            body = json.dumps(video_info)
-            headers = f"Content-Type: application/json\r\nContent-Length: {len(body.encode())}"
-            answer = f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n{body}"
-            client.send(answer.encode())
+            process_video_info_request(client, client_addr, request_path_splitted)
         case "/api/nparam":
-            if len(request_path_splitted) <= 1:
-                answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n"\
-                    "Required parameters are: 'n', 'player_url'"
-                client.send(answer.encode())
-                return
-
-            queue_dict = parse_qs(request_path_splitted[1])
-            if not ("n" in queue_dict):
-                answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'n' parameter is required!"
-                client.send(answer.encode())
-                return
-
-            if not ("player_url" in queue_dict):
-                answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'player_url' parameter is required!"
-                client.send(answer.encode())
-                return
-
-            n_param = queue_dict["n"][0]
-            player_url = queue_dict["player_url"][0]
-            print("Downloading player...")
-            player_code = download_string(player_url.replace(" ", "%20"))
-            if not player_code:
-                t = "Unable to download player!"
-                print(t)
-                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
-                client.send(answer.encode())
-                return
-            func_name = extract_n_function_name(player_code)
-            if not func_name:
-                t = "Unable to extract the 'n'-parameter decryption function name!"
-                print(t)
-                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
-                client.send(answer.encode())
-                return
-
-            print(f"Function name: {func_name}")
-            print(f"Decrypting given 'n'-parameter {n_param}...")
-            jsi = JSInterpreter(player_code)
-            func_code = jsi.extract_function_code(func_name)
-            decryption_func = extract_n_function_from_code(jsi, func_code)
-            n_param_decrypted = decryption_func(n_param)
-            print(f"Decrypted 'n'-parameter: {n_param_decrypted}")
-
-            json_answer = json.dumps({"n": n_param_decrypted, "functionName": func_name}).encode()
-            headers = f"Content-Type: application/json\r\nContent-Length: {str(len(json_answer))}"
-            client.send(f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n".encode())
-            client.send(json_answer)
+            process_nparam_request(client, request_path_splitted)
         case "/api/cipher":
-            if len(request_path_splitted) <= 1:
-                answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
-                         "Required parameters are: 'cipher', 'player_url'"
-                client.send(answer.encode())
-                return
-
-            queue_dict = parse_qs(request_path_splitted[1])
-            if not ("cipher" in queue_dict):
-                answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'cipher' parameter is required!"
-                client.send(answer.encode())
-                return
-
-            if not ("player_url" in queue_dict):
-                answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'player_url' parameter is required!"
-                client.send(answer.encode())
-                return
-
-            player_url = queue_dict["player_url"][0].replace(" ", "%20")
-            player_code = download_string(player_url)
-            if not player_code:
-                t = f"Unable to download player code!\r\n{player_url}"
-                print(t)
-                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
-                client.send(answer.encode())
-                return
-
-            encrypted_cipher = queue_dict["cipher"][0]
-            decrypted_cipher = decrypt_cipher(encrypted_cipher, player_code)
-            if not decrypted_cipher:
-                t = "Unable to decrypt Cipher!"
-                print(t)
-                answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
-                client.send(answer.encode())
-                return
-
-            json_answer = json.dumps({"encryptedCipher": encrypted_cipher, "decryptedCipher": decrypted_cipher}).encode()
-            headers = f"Content-Type: application/json\r\nContent-Length: {str(len(json_answer))}"
-            client.send(f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n".encode())
-            client.send(json_answer)
+            process_cipher_request(client, request_path_splitted)
         case _:
             msg = "Valid endpoint list:\r\nGET /api/videoinfo\r\nGET /api/nparam\r\nGET /api/cipher"
             answer = f"HTTP/1.1 400 Client error\r\n\r\n{msg}"
             client.send(answer.encode())
+
+
+def process_video_info_request(client, client_addr, request_path_splitted):
+    if len(request_path_splitted) <= 1:
+        answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
+                 "You must to send the 'video_id' parameter!"
+        client.send(answer.encode())
+        return
+    queue_dict = parse_qs(request_path_splitted[1])
+    if not ("video_id" in queue_dict):
+        answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'video_id' parameter is required!"
+        client.send(answer.encode())
+        return
+
+    video_id = queue_dict["video_id"][0]
+    print(f"Client {client_addr} is requested video {video_id}")
+
+    use_api_first = True
+    if "use_api_first" in queue_dict:
+        value = queue_dict["use_api_first"][0]
+        if value != "true" and value != "false":
+            answer = "HTTP/1.1 400 Client error\r\n\r\n" \
+                     "The 'use_api_first' parameter value must be 'true' or 'false' lowercased!"
+            client.send(answer.encode())
+            return
+        if value == "false":
+            use_api_first = False
+
+    video_info = get_video_info(video_id, use_api_first)
+    if not video_info:
+        answer = "HTTP/1.1 404 Not found\r\n\r\nCan't find video info!"
+        client.send(answer.encode())
+        return
+
+    body = json.dumps(video_info)
+    headers = f"Content-Type: application/json\r\nContent-Length: {len(body.encode())}"
+    answer = f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n{body}"
+    client.send(answer.encode())
+
+
+def process_nparam_request(client, request_path_splitted):
+    if len(request_path_splitted) <= 1:
+        answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
+                 "Required parameters are: 'n', 'player_url'"
+        client.send(answer.encode())
+        return
+    queue_dict = parse_qs(request_path_splitted[1])
+    if not ("n" in queue_dict):
+        answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'n' parameter is required!"
+        client.send(answer.encode())
+        return
+
+    if not ("player_url" in queue_dict):
+        answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'player_url' parameter is required!"
+        client.send(answer.encode())
+        return
+
+    n_param = queue_dict["n"][0]
+    player_url = queue_dict["player_url"][0]
+    print("Downloading player...")
+    player_code = download_string(player_url.replace(" ", "%20"))
+    if not player_code:
+        t = "Unable to download player!"
+        print(t)
+        answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
+        client.send(answer.encode())
+        return
+    func_name = extract_n_function_name(player_code)
+    if not func_name:
+        t = "Unable to extract the 'n'-parameter decryption function name!"
+        print(t)
+        answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
+        client.send(answer.encode())
+        return
+
+    print(f"Function name: {func_name}")
+    print(f"Decrypting given 'n'-parameter {n_param}...")
+    jsi = JSInterpreter(player_code)
+    func_code = jsi.extract_function_code(func_name)
+    decryption_func = extract_n_function_from_code(jsi, func_code)
+    n_param_decrypted = decryption_func(n_param)
+    print(f"Decrypted 'n'-parameter: {n_param_decrypted}")
+
+    json_answer = json.dumps({"n": n_param_decrypted, "functionName": func_name}).encode()
+    headers = f"Content-Type: application/json\r\nContent-Length: {str(len(json_answer))}"
+    client.send(f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n".encode())
+    client.send(json_answer)
+
+
+def process_cipher_request(client, request_path_splitted):
+    if len(request_path_splitted) <= 1:
+        answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
+                 "Required parameters are: 'cipher', 'player_url'"
+        client.send(answer.encode())
+        return
+    queue_dict = parse_qs(request_path_splitted[1])
+    if not ("cipher" in queue_dict):
+        answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'cipher' parameter is required!"
+        client.send(answer.encode())
+        return
+
+    if not ("player_url" in queue_dict):
+        answer = "HTTP/1.1 400 Client error\r\n\r\nThe 'player_url' parameter is required!"
+        client.send(answer.encode())
+        return
+
+    player_url = queue_dict["player_url"][0].replace(" ", "%20")
+    player_code = download_string(player_url)
+    if not player_code:
+        t = f"Unable to download player code!\r\n{player_url}"
+        print(t)
+        answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
+        client.send(answer.encode())
+        return
+
+    encrypted_cipher = queue_dict["cipher"][0]
+    decrypted_cipher = decrypt_cipher(encrypted_cipher, player_code)
+    if not decrypted_cipher:
+        t = "Unable to decrypt Cipher!"
+        print(t)
+        answer = f"HTTP/1.1 500 Internal server error\r\n\r\n{t}"
+        client.send(answer.encode())
+        return
+
+    json_answer = json.dumps({"encryptedCipher": encrypted_cipher, "decryptedCipher": decrypted_cipher}).encode()
+    headers = f"Content-Type: application/json\r\nContent-Length: {str(len(json_answer))}"
+    client.send(f"HTTP/1.1 200 OK\r\n{headers}\r\n\r\n".encode())
+    client.send(json_answer)
 
 
 if __name__ == '__main__':
