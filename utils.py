@@ -22,9 +22,11 @@ def download_string(url):
 
 def http_post(url, headers, body):
     try:
-        headers["Content-Length"] = len(body)
+        body_bytes = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+        headers["Content-Length"] = len(body_bytes)
         request_obj = urllib.request.Request(url, method="POST", headers=headers)
-        request = urllib.request.urlopen(request_obj, data=body)
+        request = urllib.request.urlopen(request_obj, data=body_bytes)
         response = json.loads(request.read().decode())
         return response
     except Exception as ex:
@@ -44,8 +46,7 @@ def get_video_info(video_id, use_api_first):
     if use_api_first:
         url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
         body = generate_video_info_request_body(video_id, True)
-        headers = {"Content-Type": "application/json"}
-        video_info = http_post(url, headers, json.dumps(body).encode())
+        video_info = http_post(url, {}, body)
         if video_info:
             microformat = video_info["microformat"]
             if is_family_safe(video_info):
@@ -75,16 +76,12 @@ def get_video_info(video_id, use_api_first):
                     "videoId": video_id
                 }
                 headers = {
-                    "Content-Type": "application/json",
                     "X-YouTube-Client-Name": "85",
                     "X-YouTube-Client-Version": "2.0",
                     "Origin": "https://www.youtube.com"
                 }
 
-                data = json.dumps(body).encode()
-                request_obj = urllib.request.Request(YOUTUBE_API_PLAYER_URL, method="POST", headers=headers)
-                request = urllib.request.urlopen(request_obj, data=data)
-                response = request.read()
+                response = http_post(YOUTUBE_API_PLAYER_URL, headers, body)
                 if response:
                     video_info = json.loads(response.decode())
         else:
@@ -122,7 +119,8 @@ def fix_download_urls(video_info, player_code):
                 else:
                     decrypted_cipher = decrypt_cipher(encrypted_cipher, player_code)
                     dict_cipher[encrypted_cipher_quoted] = decrypted_cipher
-                url_dict = parse_qs(cipher_signature_dict["url"][0])
+                encrypted_url_splitted = cipher_signature_dict["url"][0].split("?")
+                url_dict = parse_qs(encrypted_url_splitted[1])
                 url_dict["sig"] = [decrypted_cipher]
                 if "n" in url_dict:
                     encrypted_n = url_dict["n"][0]
@@ -132,12 +130,10 @@ def fix_download_urls(video_info, player_code):
                         decrypted_n = decryption_func(encrypted_n)
                         dict_n_params[encrypted_n] = decrypted_n
                     url_dict["n"] = [decrypted_n]
-                first_element = list(url_dict.items())[0]
-                first_part = f"{first_element[0]}={first_element[1][0]}"
-                del url_dict[first_element[0]]
-                item["url"] = f"{first_part}&{"&".join(
+                fixed_url = f"{encrypted_url_splitted[0]}?{"&".join(
                     f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
                     for key, value in url_dict.items())}"
+                item["url"] = fixed_url
                 continue
 
             url_splitted = item["url"].split("?")
@@ -149,7 +145,7 @@ def fix_download_urls(video_info, player_code):
                 else:
                     n_param_decrypted = decryption_func(n_param)
                     dict_n_params[n_param] = n_param_decrypted
-                queue_string["n"][0] = n_param_decrypted
+                queue_string["n"] = [n_param_decrypted]
                 fixed_url = f"{url_splitted[0]}?{"&".join(
                     f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
                     for key, value in queue_string.items())}"
@@ -157,9 +153,9 @@ def fix_download_urls(video_info, player_code):
 
 
 def is_ciphered(streaming_data):
-    a = streaming_data["adaptiveFormats"]
-    if a:
-        return a[0]["signatureCipher"] is not None
+    formats = streaming_data["adaptiveFormats"]
+    if formats:
+        return formats[0]["signatureCipher"] is not None
     return False
 
 
@@ -178,8 +174,7 @@ def is_family_safe(video_info):
 def get_streaming_data_decoded(video_id):
     url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
     body = generate_video_info_request_body(video_id, False)
-    headers = {"Content-Type": "application/json"}
-    data = http_post(url, headers, json.dumps(body).encode())
+    data = http_post(url, {}, body)
     return data
 
 
