@@ -48,7 +48,7 @@ def get_video_info(video_id, use_api_first):
         body = generate_video_info_request_body(video_id, True)
         video_info = http_post(url, {}, body)
         if video_info:
-            microformat = video_info["microformat"]
+            microformat = video_info.get("microformat")
             if is_family_safe(video_info):
                 streaming_data_decoded = get_streaming_data_decoded(video_id)
                 if streaming_data_decoded:
@@ -96,66 +96,67 @@ def get_video_info(video_id, use_api_first):
 
 
 def fix_download_urls(video_info, player_code):
-    streaming_data = video_info["streamingData"]
-    adaptive_formats = streaming_data["adaptiveFormats"]
-    if adaptive_formats:
-        func_name = extract_n_function_name(player_code)
-        if not func_name:
-            return
-        jsi = JSInterpreter(player_code)
-        func_code = jsi.extract_function_code(func_name)
-        decryption_func = extract_n_function_from_code(jsi, func_code)
+    streaming_data = video_info.get("streamingData")
+    if streaming_data:
+        adaptive_formats = streaming_data.get("adaptiveFormats")
+        if adaptive_formats:
+            func_name = extract_n_function_name(player_code)
+            if not func_name:
+                return
+            jsi = JSInterpreter(player_code)
+            func_code = jsi.extract_function_code(func_name)
+            decryption_func = extract_n_function_from_code(jsi, func_code)
 
-        dict_n_params = dict()
-        dict_cipher = dict()
-        for item in adaptive_formats:
-            cipher_string = item.get("signatureCipher")
-            if cipher_string:
-                cipher_signature_dict = parse_qs(cipher_string)
-                encrypted_cipher = cipher_signature_dict["s"][0]
-                encrypted_cipher_quoted = urllib.parse.quote_plus(encrypted_cipher)
-                if encrypted_cipher_quoted in dict_cipher:
-                    decrypted_cipher = dict_cipher[encrypted_cipher_quoted]
-                else:
-                    decrypted_cipher = decrypt_cipher(encrypted_cipher, player_code)
-                    dict_cipher[encrypted_cipher_quoted] = decrypted_cipher
-                encrypted_url_splitted = cipher_signature_dict["url"][0].split("?")
-                url_dict = parse_qs(encrypted_url_splitted[1])
-                url_dict["sig"] = [decrypted_cipher]
-                if "n" in url_dict:
-                    encrypted_n = url_dict["n"][0]
-                    if encrypted_n in dict_n_params:
-                        decrypted_n = dict_n_params[encrypted_n]
+            dict_n_params = dict()
+            dict_cipher = dict()
+            for item in adaptive_formats:
+                cipher_string = item.get("signatureCipher")
+                if cipher_string:
+                    cipher_signature_dict = parse_qs(cipher_string)
+                    encrypted_cipher = cipher_signature_dict["s"][0]
+                    encrypted_cipher_quoted = urllib.parse.quote_plus(encrypted_cipher)
+                    if encrypted_cipher_quoted in dict_cipher:
+                        decrypted_cipher = dict_cipher[encrypted_cipher_quoted]
                     else:
-                        decrypted_n = decryption_func(encrypted_n)
-                        dict_n_params[encrypted_n] = decrypted_n
-                    url_dict["n"] = [decrypted_n]
-                fixed_url = f"{encrypted_url_splitted[0]}?{"&".join(
-                    f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
-                    for key, value in url_dict.items())}"
-                item["url"] = fixed_url
-                continue
+                        decrypted_cipher = decrypt_cipher(encrypted_cipher, player_code)
+                        dict_cipher[encrypted_cipher_quoted] = decrypted_cipher
+                    encrypted_url_splitted = cipher_signature_dict["url"][0].split("?")
+                    url_dict = parse_qs(encrypted_url_splitted[1])
+                    url_dict["sig"] = [decrypted_cipher]
+                    if "n" in url_dict:
+                        encrypted_n = url_dict["n"][0]
+                        if encrypted_n in dict_n_params:
+                            decrypted_n = dict_n_params[encrypted_n]
+                        else:
+                            decrypted_n = decryption_func(encrypted_n)
+                            dict_n_params[encrypted_n] = decrypted_n
+                        url_dict["n"] = [decrypted_n]
+                    fixed_url = f"{encrypted_url_splitted[0]}?{"&".join(
+                        f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
+                        for key, value in url_dict.items())}"
+                    item["url"] = fixed_url
+                    continue
 
-            url_splitted = item["url"].split("?")
-            queue_string = parse_qs(url_splitted[1])
-            if "n" in queue_string:
-                n_param = queue_string["n"][0]
-                if n_param in dict_n_params:
-                    n_param_decrypted = dict_n_params[n_param]
-                else:
-                    n_param_decrypted = decryption_func(n_param)
-                    dict_n_params[n_param] = n_param_decrypted
-                queue_string["n"] = [n_param_decrypted]
-                fixed_url = f"{url_splitted[0]}?{"&".join(
-                    f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
-                    for key, value in queue_string.items())}"
-                item["url"] = fixed_url
+                url_splitted = item["url"].split("?")
+                queue_string = parse_qs(url_splitted[1])
+                if "n" in queue_string:
+                    n_param = queue_string["n"][0]
+                    if n_param in dict_n_params:
+                        n_param_decrypted = dict_n_params[n_param]
+                    else:
+                        n_param_decrypted = decryption_func(n_param)
+                        dict_n_params[n_param] = n_param_decrypted
+                    queue_string["n"] = [n_param_decrypted]
+                    fixed_url = f"{url_splitted[0]}?{"&".join(
+                        f'{urllib.parse.quote_plus(key)}={urllib.parse.quote_plus(value[0])}'
+                        for key, value in queue_string.items())}"
+                    item["url"] = fixed_url
 
 
 def is_ciphered(streaming_data):
-    formats = streaming_data["adaptiveFormats"]
+    formats = streaming_data.get("adaptiveFormats")
     if formats:
-        return formats[0]["signatureCipher"] is not None
+        return formats[0].get("signatureCipher") is not None
     return False
 
 
@@ -168,7 +169,12 @@ def extract_initial_player_response(web_page_code):
 
 
 def is_family_safe(video_info):
-    return video_info["microformat"]["playerMicroformatRenderer"]["isFamilySafe"]
+    microformat = video_info.get("microformat")
+    if microformat:
+        player_microformat_renderer = microformat.get("playerMicroformatRenderer")
+        if player_microformat_renderer:
+            return player_microformat_renderer.get("isFamilySafe")
+    return None
 
 
 def get_streaming_data_decoded(video_id):
