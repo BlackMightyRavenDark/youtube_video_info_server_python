@@ -109,7 +109,7 @@ def fix_download_urls(video_info, player_code):
         dict_n_params = dict()
         dict_cipher = dict()
         for item in adaptive_formats:
-            cipher_string = item["signatureCipher"]
+            cipher_string = item.get("signatureCipher")
             if cipher_string:
                 cipher_signature_dict = parse_qs(cipher_string)
                 encrypted_cipher = cipher_signature_dict["s"][0]
