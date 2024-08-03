@@ -83,7 +83,7 @@ def get_video_info(video_id, use_api_first):
 
                 response = http_post(YOUTUBE_API_PLAYER_URL, headers, body)
                 if response:
-                    video_info = json.loads(response.decode())
+                    video_info = response
         else:
             player_url = extract_player_url_from_web_page(web_page)
             player_code = download_string(player_url)
