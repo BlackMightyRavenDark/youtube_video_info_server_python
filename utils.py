@@ -174,7 +174,7 @@ def is_family_safe(video_info):
         player_microformat_renderer = microformat.get("playerMicroformatRenderer")
         if player_microformat_renderer:
             return player_microformat_renderer.get("isFamilySafe")
-    return None
+    return True
 
 
 def get_streaming_data_decoded(video_id):
