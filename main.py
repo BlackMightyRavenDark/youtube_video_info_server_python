@@ -1,33 +1,63 @@
 import socket
+import time
 from utils import *
 
 
+def read_client(client):
+    buffer_size = 1024
+    buffer = client.recv(buffer_size)
+    request_string, headers, stream = parse_first_content_chunk(buffer)
+    content_length = int(headers["Content-Length"]) if "Content-Length" in headers else 0
+    if content_length > stream.getbuffer().nbytes:
+        remaining = content_length - stream.getbuffer().nbytes
+        while remaining > 0:
+            want_read = remaining if remaining < buffer_size else buffer_size
+            tmp = client.recv(want_read)
+            if not tmp:
+                break
+            stream.write(tmp)
+            remaining -= len(tmp)
+    return request_string, headers, stream
+
+
 def process_client(client, client_addr):
-    received_string = client.recv(4096).decode()
-    request_string_splitted = received_string.split("\r\n")[0].split(" ")
+    request_string, headers, stream = read_client(client)
+    if not request_string:
+        print(f"Can't read client {client_addr}")
+        return
+    request_string_splitted = request_string.split(" ")
     request_method = request_string_splitted[0]
-    if request_method != "GET":
-        answer = "HTTP/1.1 405 Method not allowed\r\n\r\nOnly GET method is allowed!"
+    if request_method != "GET" and request_method != "POST":
+        answer = "HTTP/1.1 405 Method not allowed\r\n\r\nOnly GET or POST methods are allowed!"
         client.send(answer.encode())
         return
+
+    body = None
+    if request_method == "POST" and stream:
+        body = stream.getbuffer().tobytes().decode()
 
     request_path = request_string_splitted[1]
     request_path_splitted = request_path.split("?")
     endpoint_path = request_path_splitted[0]
     match endpoint_path:
         case "/api/videoinfo":
-            process_video_info_request(client, client_addr, request_path_splitted)
+            process_video_info_request(client, client_addr, request_method, request_path_splitted)
         case "/api/nparam":
-            process_nparam_request(client, request_path_splitted)
+            process_nparam_request(client, request_method, request_path_splitted)
         case "/api/cipher":
-            process_cipher_request(client, request_path_splitted)
+            process_cipher_request(client, request_method, request_path_splitted)
+        case "/api/streamingdata":
+            process_urls_decrypt_request(client, request_method, body)
         case _:
             msg = "Valid endpoint list:\r\nGET /api/videoinfo\r\nGET /api/nparam\r\nGET /api/cipher"
             answer = f"HTTP/1.1 400 Client error\r\n\r\n{msg}"
             client.send(answer.encode())
 
 
-def process_video_info_request(client, client_addr, request_path_splitted):
+def process_video_info_request(client, client_addr, request_method, request_path_splitted):
+    if request_method != "GET":
+        client.send(b"HTTP/1.1 405 Method not allowed\r\n\r\nPlease use GET method with this endpoint!")
+        return
     if len(request_path_splitted) <= 1:
         answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
                  "You must to send the 'video_id' parameter!"
@@ -65,7 +95,10 @@ def process_video_info_request(client, client_addr, request_path_splitted):
     client.send(answer.encode())
 
 
-def process_nparam_request(client, request_path_splitted):
+def process_nparam_request(client, request_method, request_path_splitted):
+    if request_method != "GET":
+        client.send(b"HTTP/1.1 405 Method not allowed\r\n\r\nPlease use GET method with this endpoint!")
+        return
     if len(request_path_splitted) <= 1:
         answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
                  "Required parameters are: 'n', 'player_url'"
@@ -114,7 +147,10 @@ def process_nparam_request(client, request_path_splitted):
     client.send(json_answer)
 
 
-def process_cipher_request(client, request_path_splitted):
+def process_cipher_request(client, request_method, request_path_splitted):
+    if request_method != "GET":
+        client.send(b"HTTP/1.1 405 Method not allowed\r\n\r\nPlease use GET method with this endpoint!")
+        return
     if len(request_path_splitted) <= 1:
         answer = "HTTP/1.1 400 Client error\r\n\r\nNo parameters was sent!\r\n" \
                  "Required parameters are: 'cipher', 'player_url'"
@@ -155,6 +191,37 @@ def process_cipher_request(client, request_path_splitted):
     client.send(json_answer)
 
 
+def process_urls_decrypt_request(client, request_method, body):
+    if request_method != "POST":
+        client.send(b"HTTP/1.1 405 Method not allowed\r\n\r\nPlease use POST method with this endpoint!")
+        return
+    json_body = try_loads_json(body)
+    if json_body is None:
+        client.send(b"HTTP/1.1 500 Internal server error\r\n\r\nCan't parse JSON!")
+        return
+    if not json_body:
+        client.send(b"HTTP/1.1 400 Client error\r\n\r\nJSON object is empty!")
+        return
+    player_url = json_body.get("playerUrl")
+    if not player_url:
+        client.send(b"HTTP/1.1 400 Client error\r\n\r\nYou must send player URL!")
+        return
+    streaming_data = json_body.get("streamingData")
+    if not streaming_data:
+        client.send(b"HTTP/1.1 400 Client error\r\n\r\nYou must send streaming data!")
+        return
+    streaming_data_json = try_loads_json(streaming_data)
+    if streaming_data_json is None:
+        client.send(b"HTTP/1.1 500 Internal server error\r\n\r\nCan't parse streaming data!")
+        return
+    player_code = download_string(player_url)
+    if not player_code:
+        answer = f"HTTP/1.1 500 Internal server error\r\n\r\nUnable to download a player code!\r\n{player_url}"
+        client.send(answer.encode())
+    fix_download_urls(streaming_data_json, player_code)
+    client.send(f"HTTP/1.1 200 OK\r\n\r\n{json.dumps(streaming_data_json)}".encode())
+
+
 if __name__ == '__main__':
     try:
         port = 0
@@ -173,9 +240,15 @@ if __name__ == '__main__':
         print("GET /api/videoinfo?video_id=<youtube_video_id>&use_api_first=false")
         print("GET /api/nparam?n=<encrypted_n_parameter_value>&player_url=<youtube_video_player_url>")
         print("GET /api/cipher?cipher=<encrypted_cipher_signature_value>&player_url=<youtube_video_player_url>")
+        print('''POST /api/streamingdata
+{
+    "playerUrl": "<youtube_video_player_url>",
+    "streamingData", "<youtube_streaming_data>"
+}''')
         while True:
             client, client_addr = server.accept()
             print(f"Client {client_addr} is connected")
+            time.sleep(1)
             process_client(client, client_addr)
             client.close()
             print(f"Client {client_addr} is disconnected")

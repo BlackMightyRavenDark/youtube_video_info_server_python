@@ -1,3 +1,4 @@
+import io
 from urllib.parse import parse_qs
 from ytdl.jsinterp import JSInterpreter
 import json
@@ -90,13 +91,14 @@ def get_video_info(video_id, use_api_first):
         if video_info:
             if microformat:
                 video_info["microformat"] = microformat
-            fix_download_urls(video_info, player_code)
+            streaming_data = video_info.get("streamingData")
+            if streaming_data:
+                fix_download_urls(streaming_data, player_code)
             return video_info
     return None
 
 
-def fix_download_urls(video_info, player_code):
-    streaming_data = video_info.get("streamingData")
+def fix_download_urls(streaming_data, player_code):
     if streaming_data:
         adaptive_formats = streaming_data.get("adaptiveFormats")
         if adaptive_formats:
@@ -232,22 +234,36 @@ def extract_signature_timestamp_from_player_code(player_code):
 
 def extract_n_function_name(player_code):
     pattern = r'''(?x)
-            (?:
-                \.get\("n"\)\)&&\(b=|
+                \((?:[\w$()\s]+,)*?\s*      # (
+                (?P<b>[a-z])\s*=\s*         # b=
                 (?:
-                    b=String\.fromCharCode\(110\)|
-                    (?P<str_idx>[a-zA-Z0-9_$.]+)&&\(b="nn"\[\+(?P=str_idx)\]
-                ),c=a\.get\(b\)\)&&\(c=|
-                \b(?P<var>[a-zA-Z0-9_$]+)=
-            )(?P<nfunc>[a-zA-Z0-9_$]+)(?:\[(?P<idx>\d+)\])?\([a-zA-Z]\)
-            (?(var),[a-zA-Z0-9_$]+\.set\("n"\,(?P=var)\),(?P=nfunc)\.length)
+                    (?:                     # expect ,c=a.get(b) (etc)
+                        String\s*\.\s*fromCharCode\s*\(\s*110\s*\)|
+                        "n+"\[\s*\+?s*[\w$.]+\s*]
+                    )\s*(?:,[\w$()\s]+(?=,))*|
+                       (?P<old>[\w$]+)      # a (old[er])
+                   )\s*
+                   (?(old)
+                                            # b.get("n")
+                       (?:\.\s*[\w$]+\s*|\[\s*[\w$]+\s*]\s*)*?
+                       (?:\.\s*n|\[\s*"n"\s*]|\.\s*get\s*\(\s*"n"\s*\))
+                       |                    # ,c=a.get(b)
+                       ,\s*(?P<c>[a-z])\s*=\s*[a-z]\s*
+                       (?:\.\s*[\w$]+\s*|\[\s*[\w$]+\s*]\s*)*?
+                       (?:\[\s*(?P=b)\s*]|\.\s*get\s*\(\s*(?P=b)\s*\))
+                   )
+                                            # interstitial junk
+                   \s*(?:\|\|\s*null\s*)?(?:\)\s*)?&&\s*(?:\(\s*)?
+               (?(c)(?P=c)|(?P=b))\s*=\s*   # [c|b]=
+                                            # nfunc|nfunc[idx]
+                   (?P<nfunc>[a-zA-Z_$][\w$]*)(?:\s*\[(?P<idx>\d+)\])?\s*\(\s*[\w$]+\s*\)
         '''
     match = re.search(pattern, player_code)
     if not match:
         print("[n-param decryptor] Can't extract function name!")
         return None
-    func_name = match.group(3)
-    idx = match.group(4)
+    func_name = match.group(4)
+    idx = match.group(5)
     if not idx:
         return func_name
 
@@ -312,3 +328,49 @@ def search_patterns(patterns, text):
         if match:
             return match.group(1)
     return None
+
+
+def extract_body_from_received_string(received_string):
+    splitted = received_string.split("\r\n\r\n")
+    if len(splitted) > 1:
+        return splitted[1]
+    return None
+
+
+def try_loads_json(json_string):
+    try:
+        j_dict = json.loads(json_string)
+        return j_dict
+    except Exception as ex:
+        print(ex)
+    return None
+
+
+def parse_first_content_chunk(chunk_bytes):
+    stream = io.BytesIO()
+    chunk_length = len(chunk_bytes)
+    headers_start = 0
+    data_start = 0
+    for i in range(0, chunk_length - 4):
+        a = chr(chunk_bytes[i])
+        if a == '\r':
+            b = chr(chunk_bytes[i + 2])
+            if b == '\r':
+                data_start = i + 4
+                break
+            if headers_start == 0:
+                headers_start = i + 2
+    request_string = chunk_bytes[0:headers_start-2].decode("ANSI")
+    headers_string = chunk_bytes[headers_start:data_start-1].decode("ANSI")
+    headers_splitted = headers_string.split("\r\n")
+    headers_dict = dict()
+    for s in headers_splitted:
+        s_splitted = s.split(":")
+        if len(s_splitted) >= 2 and (s_splitted[0]):
+            header_name = s_splitted[0].strip()
+            if header_name:
+                header_value = s_splitted[1].strip()
+                headers_dict[header_name] = header_value
+    if headers_start < data_start < chunk_length:
+        stream.write(chunk_bytes[data_start:chunk_length])
+    return request_string, headers_dict, stream
