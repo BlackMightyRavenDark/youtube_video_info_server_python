@@ -237,14 +237,7 @@ if __name__ == '__main__':
         server.listen()
         print(f"The server is started on port {port}")
         print("You can use it this way:")
-        print("GET /api/videoinfo?video_id=<youtube_video_id>&use_api_first=false")
-        print("GET /api/nparam?n=<encrypted_n_parameter_value>&player_url=<youtube_video_player_url>")
-        print("GET /api/cipher?cipher=<encrypted_cipher_signature_value>&player_url=<youtube_video_player_url>")
-        print('''POST /api/streamingdata
-{
-    "playerUrl": "<youtube_video_player_url>",
-    "streamingData", "<youtube_streaming_data>"
-}''')
+        print_help()
         while True:
             client, client_addr = server.accept()
             print(f"Client {client_addr} is connected")

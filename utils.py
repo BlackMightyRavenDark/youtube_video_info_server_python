@@ -374,3 +374,14 @@ def parse_first_content_chunk(chunk_bytes):
     if headers_start < data_start < chunk_length:
         stream.write(chunk_bytes[data_start:chunk_length])
     return request_string, headers_dict, stream
+
+
+def print_help():
+    print("GET /api/videoinfo?video_id=<youtube_video_id>&use_api_first=false")
+    print("GET /api/nparam?n=<encrypted_n_parameter_value>&player_url=<youtube_video_player_url>")
+    print("GET /api/cipher?cipher=<encrypted_cipher_signature_value>&player_url=<youtube_video_player_url>")
+    print('''POST /api/streamingdata
+{
+    "playerUrl": "<youtube_video_player_url>",
+    "streamingData", "<youtube_streaming_data>"
+}''')
