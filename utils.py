@@ -182,8 +182,9 @@ def is_family_safe(video_info):
 def get_streaming_data_decoded(video_id):
     url = f"{YOUTUBE_API_PLAYER_URL}?key={YOUTUBE_API_KEY}"
     body = generate_video_info_request_body(video_id, False)
-    data = http_post(url, {}, body)
-    return data
+    response = http_post(url, {}, body)
+    data = response.get("streamingData") if response else None
+    return data if data else response
 
 
 def generate_video_info_request_body(video_id, get_with_encrypted_urls):
